@@ -1,0 +1,11 @@
+# config/config.yml
+models:
+  - type: main
+    engine: hf_pipeline # Or keep as langchain to use the object passed below
+    model: mistralai/Ministral-3-3B-Instruct-2512
+
+rails:
+  output:
+    stages:
+      - self_correction
+      - fact_checking

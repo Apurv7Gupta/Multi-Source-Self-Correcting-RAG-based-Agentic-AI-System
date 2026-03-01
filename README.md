@@ -1,4 +1,4 @@
-![Architecture Diagram](./Architecture.png)
+![Architecture Diagram](./Architecture_diagram.png)
 
 ```bash
 

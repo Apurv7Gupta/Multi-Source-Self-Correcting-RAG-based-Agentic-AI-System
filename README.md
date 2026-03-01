@@ -1,3 +1,5 @@
+![Architectural Diagram](./Architecture.png)
+
 ```bash
 
 .

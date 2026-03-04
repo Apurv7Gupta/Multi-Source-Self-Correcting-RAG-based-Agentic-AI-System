@@ -1,10 +1,13 @@
 models:
   - type: main
-    engine: hf_pipeline
+    engine: llm # placeholder — ignored since llm= is passed directly
     model: meta-llama/Llama-3.1-8B-Instruct
 
 rails:
+  input:
+    flows:
+      - self check input
   output:
-    stages:
-      - self_correction
-      - fact_checking
+    flows:
+      - self check output
+      - self check facts

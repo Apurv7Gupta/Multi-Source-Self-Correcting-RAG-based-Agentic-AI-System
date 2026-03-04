@@ -5,26 +5,20 @@
 .
 ├── backend/
 │   ├── app.py                # Orchestration & API
-│   ├── ingestion.py          # Logic for PDFs/Markdown (Unstructured.io/PyMuPDF)
+│   ├── ingestion.py          # Logic for PDFs/Markdown (document_loaders)
 │   ├── requirements.txt
 │   ├── .env
 │   ├── db_config.py
 │   ├── data/
-│   │   └── PDFs, DOCX, TXT
+│   │   └── PDFs, DOCX, TXT, MD
 │   └── config/
 │       └── config.co
 │       └── config.yml
 │       └── prompts.yml
 │
 ├── frontend/                 # Streaming UI (React)
-│   ├── src/
-│   │   ├── components/
-│   │   │   └── ChatWindow.js # Logic for handling SSE (StreamingResponse)
-│   │   └── App.js
-│   ├── package.json
-│   └── public/
-│
-├── scripts/
-    └── init_db.sql           # PostgreSQL schema for entity memory/chat history
-
+    ├── src/
+        ├── components/
+        │   └── ChatWindow.js # Logic for handling SSE (StreamingResponse)
+        └── App.js
 ```

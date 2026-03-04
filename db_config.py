@@ -40,6 +40,3 @@ index = pc.Index(INDEX_NAME)
 
 
 # embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") // not using Local embedding gen
-# vector_db = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)    // not using local persistence
-
-# Will probably be swapped with Qdrant Cloud (free tier)

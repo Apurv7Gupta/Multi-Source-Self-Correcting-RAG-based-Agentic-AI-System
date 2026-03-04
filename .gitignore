@@ -1,0 +1,8 @@
+FileTree.txt
+dev_notes.txt
+to_be_app.ipynb
+db_config.py
+.en
+__pycache__/
+*.py[cod]
+*$py.class

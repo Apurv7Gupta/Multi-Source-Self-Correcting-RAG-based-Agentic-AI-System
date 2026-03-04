@@ -1,0 +1,10 @@
+models:
+  - type: main
+    engine: hf_pipeline
+    model: meta-llama/Llama-3.1-8B-Instruct
+
+rails:
+  output:
+    stages:
+      - self_correction
+      - fact_checking

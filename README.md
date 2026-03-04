@@ -8,19 +8,23 @@
 │   ├── ingestion.py          # Logic for PDFs/Markdown (Unstructured.io/PyMuPDF)
 │   ├── requirements.txt
 │   ├── .env
-│   └── chroma_db/            # Local vector storage (persistent directory)
+│   ├── db_config.py
+│   ├── data/
+│   │   └── PDFs, DOCX, TXT
+│   └── config/
+│       └── config.co
+│       └── config.yml
+│       └── prompts.yml
 │
-├── frontend/                 # Streaming UI React)
+├── frontend/                 # Streaming UI (React)
 │   ├── src/
-│       ├── components/
-│       │   └── ChatWindow.js # Logic for handling SSE (StreamingResponse)
-│       └── App.js
-│
-│
+│   │   ├── components/
+│   │   │   └── ChatWindow.js # Logic for handling SSE (StreamingResponse)
+│   │   └── App.js
+│   ├── package.json
+│   └── public/
 │
 ├── scripts/
-│   └── init_db.sql           # PostgreSQL schema for entity memory/chat history
-│
-└── docker-compose.yml        # Orchestrates Postgres, Backend, and Frontend
+    └── init_db.sql           # PostgreSQL schema for entity memory/chat history
 
 ```

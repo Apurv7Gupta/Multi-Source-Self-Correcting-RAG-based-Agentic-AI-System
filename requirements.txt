@@ -1,25 +1,33 @@
-# --- Core Framework & Graph ---
-langchain-core
-langgraph
-langchain-huggingface
-
-# --- API & Web Server ---
+# --- Web Framework & Env ---
 fastapi
-uvicorn[standard]
+uvicorn
+python-dotenv
 
-# --- Database & Persistence ---
-psycopg[binary,pool]
-langchain-chroma
-chromadb-client
-
-# --- Tools & Security ---
+# --- LangChain Core & Extensions ---
+langchain
 langchain-community
-tavily-python
+langchain-core
+langchain-text-splitters
+langchain-huggingface
+langchain-pinecone
+
+# --- Graph Orchestration ---
+langgraph
+
+# --- Security & Guardrails ---
 nemoguardrails
 
-# --- Utilities ---
-python-dotenv
-asyncio
+# --- Databases & Vector Stores ---
+pinecone-client
+psycopg[binary,pool]
+langgraph-checkpoint-postgres
 
-# Ingestion
-pip install langchain-community langchain-text-splitters langchain-pinecone pinecone pypdf docx2txt beautifulsoup4
+# --- Document Processing & Search ---
+pypdf
+docx2txt
+beautifulsoup4
+tavily-python
+
+# --- AI Models & Connectivity ---
+huggingface_hub
+asyncio

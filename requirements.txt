@@ -1,33 +1,20 @@
-# --- Web Framework & Env ---
-fastapi
-uvicorn
-python-dotenv
+# --- Core Framework ---
+fastapi==0.115.0
+uvicorn==0.30.6
+python-dotenv==1.0.1
 
-# --- LangChain Core & Extensions ---
-langchain
-langchain-community
-langchain-core
-langchain-text-splitters
-langchain-huggingface
-langchain-pinecone
+# --- LangChain & Graph (Pinned to resolve conflict) ---
+langchain-core>=0.3.0,<0.4.0
+langchain-community>=0.3.0,<0.4.0
+langchain-huggingface>=0.1.0
+langgraph==0.2.14
 
-# --- Graph Orchestration ---
-langgraph
+# --- Guardrails & Search ---
+nemoguardrails==0.9.1.1
+tavily-python==0.5.0
 
-# --- Security & Guardrails ---
-nemoguardrails
-
-# --- Databases & Vector Stores ---
-pinecone-client
-psycopg[binary,pool]
-langgraph-checkpoint-postgres
-
-# --- Document Processing & Search ---
-pypdf
-docx2txt
-beautifulsoup4
-tavily-python
-
-# --- AI Models & Connectivity ---
-huggingface_hub
-asyncio
+# --- Databases ---
+pinecone-client==5.0.1
+langchain-pinecone==0.2.0
+psycopg[binary,pool]==3.2.1
+langgraph-checkpoint-postgres==2.0.1

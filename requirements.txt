@@ -7,10 +7,13 @@ python-dotenv==1.0.1
 langchain-core>=0.3.0,<0.4.0
 langchain-community>=0.3.0,<0.4.0
 langchain-huggingface>=0.1.0
-langgraph==0.2.14
+# UPDATE: version 0.2.35+ or 0.3.x supports langchain-core 0.3
+langgraph>=0.2.59 
 
 # --- Guardrails & Search ---
-nemoguardrails==0.9.1.1
+# Note: NeMo Guardrails can sometimes be picky with versions; 
+# if you hit more errors, consider 0.10.x for LC 0.3 compatibility.
+nemoguardrails==0.9.1.1 
 tavily-python==0.5.0
 
 # --- Databases ---

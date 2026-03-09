@@ -68,7 +68,7 @@ async def web_search(query: str):
 
 
 async def retrieve_node(state: AgentState):
-    """Fetch relevant documents + web search based on the last user query."""
+    """Fetch relevant documents on last query."""
     last_message = state["messages"][-1].content
 
     joined_results = ""
@@ -83,9 +83,12 @@ async def retrieve_node(state: AgentState):
 
     docs_context = f"--- INTERNAL DOCS KNOWLEDGE ---\n{joined_results}\n\n"
 
+    
+    status = "Scanning docs..." if joined_results.strip() else None
+
     return {
         "context": docs_context,
-        "status": "Scanning docs...",
+        "status": status,
     }
 
 
@@ -98,7 +101,7 @@ async def call_model_node(state: AgentState):
         [
             (
                 "system",
-                "Answer concisely based on the provided context ONLY if you think the question is related to the context, otherwise you can answer based on your own knowledge, but do NOT hallucinate) "
+                "Answer concisely based on the provided context ONLY if you think the question is related to the context, otherwise you can answer based on your own knowledge, but do NOT hallucinate "
                 "\n\n"
                 "Context:\n{context}",
             ),
@@ -109,6 +112,7 @@ async def call_model_node(state: AgentState):
     # Bind template with tools
 
     chain = prompt_template | llm_with_tools
+
 
     # B. Generate response with Guardrails
     res = await chain.ainvoke({"context": context, "messages": state["messages"]})
@@ -132,13 +136,16 @@ async def call_model_node(state: AgentState):
                         ]
 
             result = await rails.generate_async(messages=nemo_input)
-            res.content = result.content
+            res.content = result.get("content", "")
             status = "Finalizing response..."
         if not res.content or "I cannot answer" in res.content:
             status = "Response blocked by safety/fact-check guardrails."
 
     else:
-        status = "Searching the web for more info..."
+        if res.tool_calls:
+            status = "Searching the web..."
+        else:
+            status = None
 
     return {"messages": [res], "status": status}
 
@@ -210,11 +217,9 @@ async def chat_endpoint(user_id: str, thread_id: str, message: str):
         ):
             # 1. Handle Status Updates (from any node that provides them)
             # The 'event' dict will look like: {"retrieve": {"status": "...", "context": "..."}}
-            node_name = list(event.keys())[0]
-            node_output = event[node_name]
-
+          
             for node_name, node_output in event.items():
-                if "status" in node_output:
+                if node_output.get("status"):
                     yield f"data: [STATUS] {node_output['status']}\n\n"
 
                 # 2. Handle the Final AI Message (specifically from the llm node)

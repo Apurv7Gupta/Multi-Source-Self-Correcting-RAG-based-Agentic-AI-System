@@ -1,28 +1,25 @@
 # --- Web Server ---
-fastapi==0.115.0
-uvicorn==0.30.6
+# FastAPI 0.135+ supports Starlette 0.49+, which NeMo 0.20 requires.
+fastapi>=0.135.1
+uvicorn>=0.41.0
 python-dotenv==1.0.1
 
 # --- LangChain & Graph ---
-# These 0.3.x versions are the current standard for 2026
+# These 1.0.x versions are the 2026 stable releases.
 langchain-core>=0.3.0,<0.4.0
 langchain-community>=0.3.0,<0.4.0
-langchain-huggingface>=0.1.0
-
-# langgraph 0.2.14 was too old; 1.0.x is the stable 2026 release
-langgraph>=1.0.0
+langchain-huggingface>=1.2.1
+langgraph>=1.0.10
 
 # --- Guardrails & Search ---
-# nemoguardrails 0.9.x was incompatible with LangChain 0.3. 
-# Version 0.20.0 (Jan 2026) is the latest stable version.
+# NeMo 0.20.0 is the latest stable release for the 0.3 ecosystem.
 nemoguardrails>=0.20.0
 tavily-python==0.5.0
 
 # --- Databases ---
-pinecone-client>=5.0.1
-langchain-pinecone>=0.2.0
+pinecone-client>=6.0.0
+langchain-pinecone>=0.2.13
 psycopg[binary,pool]==3.2.1
 
-# langgraph-checkpoint-postgres 2.0.1 was for the older langgraph.
-# Version 3.0.x matches the LangGraph 1.0 ecosystem.
-langgraph-checkpoint-postgres>=3.0.0
+# langgraph-checkpoint-postgres 3.0.4+ is required for LangGraph 1.0.
+langgraph-checkpoint-postgres>=3.0.4

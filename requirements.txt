@@ -10,6 +10,7 @@ langchain-core>=0.3.78
 langchain-community>=0.3.0
 langchain-huggingface>=1.2.1
 langgraph>=1.0.10
+langchain-tavily
 
 # --- Guardrails & Search ---
 nemoguardrails>=0.20.0

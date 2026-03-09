@@ -8,7 +8,8 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.graph.message import add_messages
 from langchain.tools import tool
 from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_community.tools.tavily_search import TavilySearchResults
+# from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_tavily import TavilySearch
 from nemoguardrails import LLMRails, RailsConfig
 from contextlib import asynccontextmanager
 from psycopg_pool import AsyncConnectionPool
@@ -46,7 +47,9 @@ rails = LLMRails(config, llm=llm)  # Pass existing LLM
 
 # 1.5) SEARCH THE WEB (tool) ---
 
-search_tool = TavilySearchResults(k=3)
+# search_tool = TavilySearchResults(k=3)
+
+search_tool = TavilySearch(max_results=3)
 
 
 @tool
@@ -73,7 +76,7 @@ async def retrieve_node(state: AgentState):
     if retriever is None:
         docs_task = asyncio.sleep(0, result=[])
     else:
-        docs_task = retriever.ainvoke(last_message)
+        docs_task = await retriever.ainvoke(last_message)
 
     if not isinstance(docs_task, Exception):
         joined_results = "\n".join([doc.page_content for doc in docs_task])
@@ -201,6 +204,7 @@ async def chat_endpoint(user_id: str, thread_id: str, message: str):
     input_data = {"messages": [HumanMessage(content=message)]}
 
     async def event_generator():
+        yield "data: [STATUS] Request received\n\n"  # endpoint should immediately send a ping to show it's alive
         async for event in graph_app.astream(
             input_data, config=config, stream_mode="updates"
         ):

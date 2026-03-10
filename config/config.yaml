@@ -10,4 +10,4 @@ rails:
   output:
     flows:
       - self check output
-      - self check facts
+      # - self check facts

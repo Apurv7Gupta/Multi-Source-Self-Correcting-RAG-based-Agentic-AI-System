@@ -1,8 +1,1 @@
-define user ask something
-  "tell me"
-  "what is"
-  "how do I"
 
-define flow
-  user ask something
-  bot respond

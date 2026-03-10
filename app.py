@@ -157,7 +157,7 @@ async def call_model_node(state: AgentState):
 
 
             # --- Guardrails output check only ---
-            check = await rails.runtime.llm_call(
+            check = await rails.generate_async(
                 task="self_check_output",
                 context={"bot_response": res.content},
             )

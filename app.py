@@ -62,6 +62,7 @@ async def web_search(query: str):
 
      # case 1: structured dict
     if isinstance(results, dict):
+        text = ""
         if "answer" in results:
             text += results["answer"] + "\n\n"
 
@@ -94,10 +95,8 @@ async def retrieve_node(state: AgentState):
 
     joined_results = ""
 
-    if retriever is None:
-        docs_task = asyncio.sleep(0, result=[])
-    else:
-        docs_task = await retriever.ainvoke(last_message)
+    docs = await retriever.ainvoke(last_message) if retriever else []
+    joined_results = "\n".join(doc.page_content for doc in docs)
 
     if not isinstance(docs_task, Exception):
         joined_results = "\n".join([doc.page_content for doc in docs_task])
@@ -156,8 +155,11 @@ async def call_model_node(state: AgentState):
                             }
                         ]
 
-            result = await rails.generate_async(messages=nemo_input)
-            res.content = result.get("content", "")
+            result = await rails.generate_async(messages=[
+    {"role": "user", "content": state["messages"][-1].content},
+    {"role": "assistant", "content": res.content}
+])
+            res.content = result.get("content", res.content)
             status = "Finalizing response..."
         if not res.content or "I cannot answer" in res.content:
             status = "Response blocked by safety/fact-check guardrails."

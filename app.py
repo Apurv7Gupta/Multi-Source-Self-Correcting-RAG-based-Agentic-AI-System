@@ -95,7 +95,7 @@ async def retrieve_node(state: AgentState):
 
     joined_results = ""
 
-    docs = await retriever.ainvoke(last_message) if retriever else []
+    docs_task = await retriever.ainvoke(last_message) if retriever else []
     joined_results = "\n".join(doc.page_content for doc in docs)
 
     if not isinstance(docs_task, Exception):

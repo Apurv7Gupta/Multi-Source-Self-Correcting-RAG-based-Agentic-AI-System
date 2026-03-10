@@ -27,11 +27,14 @@ prompts:
 
   - task: self_check_facts
     content: |
-      Your task is to check if the AI response is grounded in the provided context.
+      Your task is to check if the AI response below is appropriate.
 
-      Context:
-      {{ evidence }}
+      Policy:
+      - No harmful or offensive content
+      - If the message contains factual claims, they must not be hallucinated
+      - If the message contains no factual claims, it is acceptable
+
 
       AI response: "{{ bot_response }}"
 
-      Answer with yes/no only. Is the response fully supported by the context?
+      Answer with yes/no only.

@@ -49,7 +49,7 @@ rails = LLMRails(config, llm=llm)  # Pass existing LLM
 
 # search_tool = TavilySearchResults(k=3)
 
-search_tool = TavilySearch(max_results=3)
+search_tool = TavilySearch(max_results=3, search_depth="basic")
 
 
 @tool
@@ -60,8 +60,29 @@ async def web_search(query: str):
     """
     results = await search_tool.ainvoke(query)
 
-    joined_results = "\n".join([r["content"] for r in results])
-    return f"--------- WEB SEARCH RESULTS ---------\n\n{joined_results}"
+     # case 1: structured dict
+    if isinstance(results, dict):
+        if "answer" in results:
+            text += results["answer"] + "\n\n"
+
+        if "results" in results:
+            text += "\n".join(
+                r.get("content", "") for r in results["results"]
+                if isinstance(r, dict)
+            )
+
+    # case 2: list of results
+    elif isinstance(results, list):
+        text = "\n".join(
+            r.get("content", str(r)) if isinstance(r, dict) else str(r)
+            for r in results
+        )
+
+    # case 3: plain string
+    else:
+        text = str(results)
+
+    return f"--------- WEB SEARCH RESULTS ---------\n\n{text}"
 
 
 # 2). RETRIEVE NODE ---

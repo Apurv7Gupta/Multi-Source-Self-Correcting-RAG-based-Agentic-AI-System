@@ -137,30 +137,35 @@ async def call_model_node(state: AgentState):
     # B. Generate response with Guardrails
     res = await chain.ainvoke({"context": context, "messages": state["messages"]})
 
-    status = "Processing..."
+    status = "Finalizing Response..."
 
     # C. Run Guardrails on the output text ONLY if it's not a tool call
     if not res.tool_calls:
 
         if res.content.strip():
 
-            nemo_input = [
-                            {
-                                "role": "user", 
-                                "content": f"Context: {context}\n\nQuestion: {state['messages'][-1].content}"
-                            },
-                            {
-                                "role": "assistant",
-                                "content": res.content
-                            }
-                        ]
+            # nemo_input = [
+            #                 {
+            #                     "role": "user", 
+            #                     "content": f"Context: {context}\n\nQuestion: {state['messages'][-1].content}"
+            #                 },
+            #                 {
+            #                     "role": "assistant",
+            #                     "content": res.content
+            #                 }
+            #             ]
 
-            result = await rails.generate_async(messages=[
-    {"role": "user", "content": state["messages"][-1].content},
-    {"role": "assistant", "content": res.content}
-])
-            res.content = result.get("content", res.content)
-            status = "Finalizing response..."
+
+            # --- Guardrails output check only ---
+            check = await rails.runtime.llm_call(
+                task="self_check_output",
+                context={"bot_response": res.content},
+            )
+
+            if check.strip().lower() != "yes":
+                res.content = "Response blocked by safety guardrails."  # changed
+    
+            status = "Answering..."
         if not res.content or "I cannot answer" in res.content:
             status = "Response blocked by safety/fact-check guardrails."
 
@@ -255,6 +260,7 @@ async def chat_endpoint(user_id: str, thread_id: str, message: str):
                             yield f"data: {final_content}\n\n"
         except Exception as e:
             yield f"data: [ERROR] {str(e)}\n\n"
+        yield "data: [DONE]\n\n"  # termination event
 
 
 

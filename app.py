@@ -96,7 +96,7 @@ async def retrieve_node(state: AgentState):
     joined_results = ""
 
     docs_task = await retriever.ainvoke(last_message) if retriever else []
-    joined_results = "\n".join(doc.page_content for doc in docs)
+    joined_results = "\n".join(doc.page_content for doc in docs_task)
 
     if not isinstance(docs_task, Exception):
         joined_results = "\n".join([doc.page_content for doc in docs_task])
@@ -235,23 +235,26 @@ async def chat_endpoint(user_id: str, thread_id: str, message: str):
 
     async def event_generator():
         yield "data: [STATUS] Request received\n\n"  # endpoint should immediately send a ping to show it's alive
-        async for event in graph_app.astream(
-            input_data, config=config, stream_mode="updates"
-        ):
-            # 1. Handle Status Updates (from any node that provides them)
-            # The 'event' dict will look like: {"retrieve": {"status": "...", "context": "..."}}
-          
-            for node_name, node_output in event.items():
-                if node_output.get("status"):
-                    yield f"data: [STATUS] {node_output['status']}\n\n"
+        try:
+            async for event in graph_app.astream(
+                input_data, config=config, stream_mode="updates"
+            ):
+                # 1. Handle Status Updates (from any node that provides them)
+                # The 'event' dict will look like: {"retrieve": {"status": "...", "context": "..."}}
+            
+                for node_name, node_output in event.items():
+                    if node_output.get("status"):
+                        yield f"data: [STATUS] {node_output['status']}\n\n"
 
-                # 2. Handle the Final AI Message (specifically from the llm node)
-                if node_name == "llm" and "messages" in node_output:
-                    # node_output["messages"] only contains the NEW messages from this node
-                    final_content = node_output["messages"][-1].content
+                    # 2. Handle the Final AI Message (specifically from the llm node)
+                    if node_name == "llm" and "messages" in node_output:
+                        # node_output["messages"] only contains the NEW messages from this node
+                        final_content = node_output["messages"][-1].content
 
-                    if final_content.strip():
-                        yield f"data: {final_content}\n\n"
+                        if final_content.strip():
+                            yield f"data: {final_content}\n\n"
+        except Exception as e:
+            yield f"data: [ERROR] {str(e)}\n\n"
 
 
 

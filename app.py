@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 import asyncio
 from db_config import get_vector_db
+from fastapi.middleware.cors import CORSMiddleware
 # --- 1. LLM CONFIGURATION ---
 llm_tool_error = HuggingFaceEndpoint(
     repo_id="meta-llama/Llama-3.1-8B-Instruct",
@@ -95,11 +96,8 @@ async def retrieve_node(state: AgentState):
 
     joined_results = ""
 
-    docs_task = await retriever.ainvoke(last_message) if retriever else []
-    joined_results = "\n".join(doc.page_content for doc in docs_task)
-
-    if not isinstance(docs_task, Exception):
-        joined_results = "\n".join([doc.page_content for doc in docs_task])
+    docs = await retriever.ainvoke(last_message) if retriever else []
+    joined_results = "\n".join(doc.page_content for doc in docs)
 
     docs_context = f"--- INTERNAL DOCS KNOWLEDGE ---\n{joined_results}\n\n"
 
@@ -265,3 +263,10 @@ async def chat_endpoint(user_id: str, thread_id: str, message: str):
 
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+api.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "https://frontend-domain.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)

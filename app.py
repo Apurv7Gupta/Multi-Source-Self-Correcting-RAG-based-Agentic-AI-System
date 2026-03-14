@@ -209,7 +209,14 @@ DB_URI = (
     f"?sslmode=require&channel_binding=require"
 )
 
-pool = AsyncConnectionPool(conninfo=DB_URI, max_size=10, kwargs={"autocommit": True})
+pool = AsyncConnectionPool(
+    conninfo=DB_URI,
+    max_size=10,
+    kwargs={"autocommit": True},
+    timeout=10,                # added
+    max_idle=60,               # close idle connections
+    reconnect_timeout=10       # reconnect if DB dropped connection
+)
 
 
 @asynccontextmanager

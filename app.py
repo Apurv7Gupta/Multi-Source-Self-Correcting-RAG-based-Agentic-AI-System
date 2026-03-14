@@ -209,21 +209,24 @@ DB_URI = (
     f"?sslmode=require&channel_binding=require"
 )
 
-pool = AsyncConnectionPool(
-    conninfo=DB_URI,
-    max_size=10,
-    kwargs={"autocommit": True},
-    timeout=10,                # added
-    max_idle=60,               # close idle connections
-    reconnect_timeout=10       # reconnect if DB dropped connection
-)
-
+pool = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global retriever
     global graph_app
+    global pool  # added
     # Initialize checkpointer and setup tables
+
+    # create pool here  ← changed
+    pool = AsyncConnectionPool(
+        conninfo=DB_URI,
+        max_size=10,
+        min_size=1,                 # keeps one active connection
+        timeout=10,
+        kwargs={"autocommit": True},
+    )
+    
     async with pool:
         vector_db = get_vector_db()
         retriever = vector_db.as_retriever(search_kwargs={"k": 3})
@@ -232,7 +235,6 @@ async def lifespan(app: FastAPI):
         # Compile graph with the async checkpointer
         graph_app = workflow.compile(checkpointer=checkpointer)
         yield
-        await pool.close()
 # --- 6. API / FRONTEND CONNECTION (FastAPI) ---
 
 api = FastAPI(lifespan=lifespan)

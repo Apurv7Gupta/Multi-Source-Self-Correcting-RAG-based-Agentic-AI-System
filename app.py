@@ -138,7 +138,10 @@ async def call_model_node(state: AgentState):
     status = "Finalizing Response..."
 
     # C. Run Guardrails on the output text ONLY if it's not a tool call
-    if not res.tool_calls:
+    if res.tool_calls:
+        status = "Calling Tools..."
+    else:
+        status = "Answering..."
 
         if res.content.strip():
 
@@ -164,14 +167,10 @@ async def call_model_node(state: AgentState):
             }
             )
             new_content = res.content
-
-
             if hasattr(rails_result, "content"):
                 new_content = rails_result.content
             elif hasattr(rails_result, "response") and len(rails_result.response) > 0:
                 new_content = rails_result.response[0].get("content", res.content)
-            elif isinstance(rails_result, dict):
-                new_content = rails_result.get("content", res.content)
                 
             #----------------------DEBUG---------------------------------------
             print(f"DEBUG: Original AI Content: {res.content}")
@@ -180,21 +179,9 @@ async def call_model_node(state: AgentState):
 
 
             if str(new_content).strip() != res.content.strip():
-                
                 res.content = "Response blocked by safety guardrails."
-    
-            status = "Answering..."
-        if not res.content or "I cannot answer" in res.content:
-            status = "Response blocked by safety/fact-check guardrails."
-
-    else:
-        if res.tool_calls:
-            status = "Searching the web..."
-        else:
-            status = None
-
-    return {"messages": [res], "status": status}
-
+                status = "Response blocked by safety/fact-check guardrails."
+        return {"messages": [res], "status": status}
 
 tools = [web_search]
 tool_node = ToolNode(tools)

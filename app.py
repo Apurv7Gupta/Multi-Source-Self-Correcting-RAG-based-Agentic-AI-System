@@ -163,9 +163,10 @@ async def call_model_node(state: AgentState):
                 "rails": ["output"] 
             }
             )
+            new_content = getattr(rails_result, "content", res.content)
 
 
-            if rails_result.content.strip() != res.content.strip():
+            if new_content.content.strip() != res.content.strip():
                 
                 res.content = "Response blocked by safety guardrails."  # changed
     
@@ -246,6 +247,15 @@ async def lifespan(app: FastAPI):
 api = FastAPI(lifespan=lifespan)
 
 
+api.add_middleware(
+    CORSMiddleware,
+    allow_origins=[os.environ.get("frontendURL", "http://localhost:5173")],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 @api.post("/chat")
 async def chat_endpoint(user_id: str, thread_id: str, message: str):
     config = {"configurable": {"thread_id": thread_id}}
@@ -278,10 +288,3 @@ async def chat_endpoint(user_id: str, thread_id: str, message: str):
 
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
-api.add_middleware(
-    CORSMiddleware,
-    allow_origins=[os.environ.get("frontendURL", "http://localhost:5173")],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)

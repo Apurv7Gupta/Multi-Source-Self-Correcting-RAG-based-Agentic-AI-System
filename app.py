@@ -166,7 +166,7 @@ async def call_model_node(state: AgentState):
             new_content = getattr(rails_result, "content", res.content)
 
 
-            if new_content.content.strip() != res.content.strip():
+            if str(new_content).strip() != res.content.strip():
                 
                 res.content = "Response blocked by safety guardrails."  # changed
     

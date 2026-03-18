@@ -1,0 +1,10 @@
+prompts:
+  - task: self_check_output
+    content: |
+      Your task is to check if the bot response is relevant to the user's request and based on the context.
+      
+      Context: {{ context }}
+      User Request: {{ user_input }}
+      Bot Response: {{ bot_response }}
+
+      Is the response accurate and safe? Answer with only "yes" or "no".

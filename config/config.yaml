@@ -4,10 +4,10 @@ models:
     model: meta-llama/Llama-3.1-8B-Instruct
 
 rails:
-  input:
-    flows:
-      - self check input
-  output:
-    flows:
-      - self check output
+  # input:
+  #   flows:
+  #     - self check input
+  # output:
+  #   flows:
+  #     - self check output
       # - self check facts

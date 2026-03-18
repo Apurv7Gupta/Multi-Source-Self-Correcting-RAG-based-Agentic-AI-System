@@ -165,6 +165,11 @@ async def call_model_node(state: AgentState):
             )
             new_content = getattr(rails_result, "content", res.content)
 
+            #----------------------DEBUG---------------------------------------
+            print(f"DEBUG: Original AI Content: {res.content}")
+            print(f"DEBUG: Guardrails Result: {rails_result.content}")
+            #------------------------------------------------------------------
+
 
             if str(new_content).strip() != res.content.strip():
                 

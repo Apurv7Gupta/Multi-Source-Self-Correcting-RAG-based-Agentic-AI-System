@@ -163,17 +163,25 @@ async def call_model_node(state: AgentState):
                 "rails": ["output"] 
             }
             )
-            new_content = getattr(rails_result, "content", res.content)
+            new_content = res.content
 
+
+            if hasattr(rails_result, "content"):
+                new_content = rails_result.content
+            elif hasattr(rails_result, "response") and len(rails_result.response) > 0:
+                new_content = rails_result.response[0].get("content", res.content)
+            elif isinstance(rails_result, dict):
+                new_content = rails_result.get("content", res.content)
+                
             #----------------------DEBUG---------------------------------------
             print(f"DEBUG: Original AI Content: {res.content}")
-            print(f"DEBUG: Guardrails Result: {rails_result.content}")
+            print(f"DEBUG: Guardrails Result: {new_content}")
             #------------------------------------------------------------------
 
 
             if str(new_content).strip() != res.content.strip():
                 
-                res.content = "Response blocked by safety guardrails."  # changed
+                res.content = "Response blocked by safety guardrails."
     
             status = "Answering..."
         if not res.content or "I cannot answer" in res.content:

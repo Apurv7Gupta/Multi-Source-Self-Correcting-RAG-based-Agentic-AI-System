@@ -1,10 +1,19 @@
 prompts:
   - task: self_check_output
     content: |
-      Your task is to check if the bot response is relevant to the user's request and based on the context.
+      You are a safety reviewer. Determine if the bot response follows the context.
       
-      Context: {{ context }}
-      User Request: {{ user_input }}
-      Bot Response: {{ bot_response }}
+      Example 1:
+      Context: User name is John.
+      Response: Hello John.
+      Verdict: yes
 
-      Is the response accurate and safe? Answer with only "yes" or "no".
+      Example 2:
+      Context: Apple is a fruit.
+      Response: Batman is a hero.
+      Verdict: no
+
+      Current Task:
+      Context: {{ context }}
+      Bot Response: {{ bot_response }}
+      Verdict:

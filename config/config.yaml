@@ -1,4 +1,9 @@
-# rails:
-#   output:
-#     flows:
-#       - self check output
+models:
+  - type: main
+    engine: hf_endpoint # or placeholder
+    model: meta-llama/Llama-3.1-8B-Instruct
+
+# Even if you aren't using rails, the keys must exist or the file must be valid YAML
+rails:
+  output:
+    flows: [] # Use empty list instead of commenting out the whole section

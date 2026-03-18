@@ -3,7 +3,7 @@ models:
     engine: llm # placeholder — ignored since llm= is passed directly
     model: meta-llama/Llama-3.1-8B-Instruct
 
-rails:
+# rails:
   # input:
   #   flows:
   #     - self check input
@@ -11,3 +11,7 @@ rails:
   #   flows:
   #     - self check output
       # - self check facts
+rails:
+  output:
+    flows:
+      - self check output

@@ -155,12 +155,18 @@ async def call_model_node(state: AgentState):
 
 
             # --- Guardrails output check only ---
-            check = await rails.generate_async(
-                task="self_check_output",
-                context={"bot_response": res.content},
+            check_messages = [{"role": "assistant", "content": res.content}]
+            rails_result = await rails.generate_async(
+               messages=check_messages,
+            options={
+                "output_vars": True,
+                "rails": ["output"] 
+            }
             )
 
-            if check.strip().lower() != "yes":
+
+            if rails_result.content.strip() != res.content.strip():
+                
                 res.content = "Response blocked by safety guardrails."  # changed
     
             status = "Answering..."
@@ -211,6 +217,7 @@ DB_URI = (
 
 pool = None
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global retriever
@@ -222,11 +229,10 @@ async def lifespan(app: FastAPI):
     pool = AsyncConnectionPool(
         conninfo=DB_URI,
         max_size=10,
-        min_size=1,                 # keeps one active connection
+        min_size=1,  # keeps one active connection
         timeout=10,
         kwargs={"autocommit": True},
     )
-    
     async with pool:
         vector_db = get_vector_db()
         retriever = vector_db.as_retriever(search_kwargs={"k": 3})
@@ -246,7 +252,7 @@ async def chat_endpoint(user_id: str, thread_id: str, message: str):
     input_data = {"messages": [HumanMessage(content=message)]}
 
     async def event_generator():
-        yield "data: [STATUS] Request received\n\n"  # endpoint should immediately send a ping to show it's alive
+        yield "data: [STATUS] Answering...\n\n"  # endpoint should immediately send a ping to show it's alive
         try:
             async for event in graph_app.astream(
                 input_data, config=config, stream_mode="updates"
@@ -274,7 +280,7 @@ async def chat_endpoint(user_id: str, thread_id: str, message: str):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 api.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "https://frontend-domain.com"],
+    allow_origins=[os.environ.get("frontendURL", "http://localhost:5173")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -19,6 +19,14 @@ from fastapi.responses import StreamingResponse
 import asyncio
 from db_config import get_vector_db
 from fastapi.middleware.cors import CORSMiddleware
+
+# --- PIP FREEZE ---
+@app.get("/__freeze")  # <-- added
+def freeze():  # <-- added
+    import pkg_resources  # <-- added
+    return sorted([str(d) for d in pkg_resources.working_set])  # <-- added
+# -----------------
+
 # --- 1. LLM CONFIGURATION ---
 llm_tool_error = HuggingFaceEndpoint(
     repo_id="meta-llama/Llama-3.1-8B-Instruct",

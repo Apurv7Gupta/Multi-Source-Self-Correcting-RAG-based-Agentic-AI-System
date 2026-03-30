@@ -20,12 +20,6 @@ import asyncio
 from db_config import get_vector_db
 from fastapi.middleware.cors import CORSMiddleware
 
-# --- PIP FREEZE ---
-@app.get("/__freeze")  # <-- added
-def freeze():  # <-- added
-    import pkg_resources  # <-- added
-    return sorted([str(d) for d in pkg_resources.working_set])  # <-- added
-# -----------------
 
 # --- 1. LLM CONFIGURATION ---
 llm_tool_error = HuggingFaceEndpoint(
@@ -253,6 +247,14 @@ async def lifespan(app: FastAPI):
 # --- 6. API / FRONTEND CONNECTION (FastAPI) ---
 
 api = FastAPI(lifespan=lifespan)
+
+
+# --- PIP FREEZE ---
+@api.get("/__freeze")
+def freeze():
+    import pkg_resources
+    return sorted([str(d) for d in pkg_resources.working_set])
+# -----------------
 
 
 api.add_middleware(

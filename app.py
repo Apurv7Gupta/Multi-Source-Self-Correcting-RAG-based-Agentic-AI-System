@@ -16,6 +16,7 @@ from psycopg_pool import AsyncConnectionPool
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 import asyncio
 from db_config import get_vector_db
 from fastapi.middleware.cors import CORSMiddleware
@@ -125,11 +126,13 @@ async def call_model_node(state: AgentState):
         [
             (
                 "system",
-                "You are an AI assistant. Use the retrieve_docs tool to search for internal knowledge and the web_search tool for external information. "
+                "You are an AI assistant. You have access to tools, but you must NOT use them unless absolutely necessary.\n"
                 "CRITICAL INSTRUCTIONS:\n"
-                "1. DO NOT use tools for simple greetings (e.g. 'hi', 'hey', 'hello') or casual conversation. Answer these directly.\n"
-                "2. If you have already used a tool and got a result, synthesize the final answer immediately. DO NOT call the tool again for the same question.\n"
-                "3. Always provide concise and helpful answers.",
+                "1. DO NOT use tools for creative writing (e.g., poems, stories, code), simple greetings, or general conversation. Answer these directly from your own knowledge.\n"
+                "2. ONLY use retrieve_docs for specific questions about the company's internal knowledge and data.\n"
+                "3. ONLY use web_search for specific questions about current events or external facts.\n"
+                "4. If you have already used a tool and got a result, synthesize the final answer immediately. DO NOT call the tool again for the same question.\n"
+                "5. Always provide concise and helpful answers.",
             ),
             MessagesPlaceholder(variable_name="messages"),
         ]
@@ -249,6 +252,13 @@ async def lifespan(app: FastAPI):
         kwargs={"autocommit": True},
     )
     async with pool:
+        # Create thread_titles table if it doesn't exist
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "CREATE TABLE IF NOT EXISTS thread_titles (thread_id TEXT PRIMARY KEY, title TEXT)"
+                )
+        
         vector_db = get_vector_db()
         retriever = vector_db.as_retriever(search_kwargs={"k": 3})
         checkpointer = AsyncPostgresSaver(pool)
@@ -268,15 +278,35 @@ def freeze():
     return sorted([str(d) for d in pkg_resources.working_set])
 # -----------------
 
+class RenameThreadRequest(BaseModel):
+    title: str
+
 @api.get("/threads")
 async def get_threads():
     if not pool:
         return {"threads": []}
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
-            await cur.execute("SELECT DISTINCT thread_id FROM checkpoints;")
+            await cur.execute("""
+                SELECT c.thread_id, t.title 
+                FROM (SELECT DISTINCT thread_id FROM checkpoints) c 
+                LEFT JOIN thread_titles t ON c.thread_id = t.thread_id;
+            """)
             rows = await cur.fetchall()
-            return {"threads": [{"id": row[0], "title": f"Chat {row[0]}"} for row in rows]}
+            return {"threads": [{"id": row[0], "title": row[1] if row[1] else f"Chat {row[0]}"} for row in rows]}
+
+@api.put("/threads/{thread_id}/title")
+async def rename_thread(thread_id: str, request: RenameThreadRequest):
+    if not pool:
+        return {"status": "error", "message": "No database connection"}
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("""
+                INSERT INTO thread_titles (thread_id, title) 
+                VALUES (%s, %s) 
+                ON CONFLICT (thread_id) DO UPDATE SET title = EXCLUDED.title;
+            """, (thread_id, request.title))
+    return {"status": "success", "title": request.title}
 
 @api.delete("/threads/{thread_id}")
 async def delete_thread(thread_id: str):
@@ -286,6 +316,7 @@ async def delete_thread(thread_id: str):
         async with conn.cursor() as cur:
             await cur.execute("DELETE FROM checkpoints WHERE thread_id = %s", (thread_id,))
             await cur.execute("DELETE FROM checkpoint_writes WHERE thread_id = %s", (thread_id,))
+            await cur.execute("DELETE FROM thread_titles WHERE thread_id = %s", (thread_id,))
             try:
                 await cur.execute("DELETE FROM checkpoint_blobs WHERE thread_id = %s", (thread_id,))
             except Exception:

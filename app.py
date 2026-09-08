@@ -1,0 +1,299 @@
+import os
+from typing import Annotated, TypedDict, List
+from langgraph.graph import StateGraph, START, END
+from langchain_huggingface import HuggingFaceEndpoint
+from langchain_huggingface import ChatHuggingFace
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langgraph.graph.message import add_messages
+from langchain.tools import tool
+from langgraph.prebuilt import ToolNode, tools_condition
+# from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_tavily import TavilySearch
+from nemoguardrails import LLMRails, RailsConfig
+from contextlib import asynccontextmanager
+from psycopg_pool import AsyncConnectionPool
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+import asyncio
+from db_config import get_vector_db
+from fastapi.middleware.cors import CORSMiddleware
+
+
+# --- 1. LLM CONFIGURATION ---
+llm_tool_error = HuggingFaceEndpoint(
+    repo_id="meta-llama/Llama-3.1-8B-Instruct",
+    huggingfacehub_api_token=os.getenv("HF_TOKEN"),
+    temperature=0.1,
+    max_new_tokens=512,
+    streaming=True,
+)
+
+llm = ChatHuggingFace(llm=llm_tool_error)
+# Global variables for the lifespan
+retriever = None
+graph_app = None 
+pool = None
+# --- 2. STATE DEFINITION ---
+class AgentState(TypedDict):
+    messages: Annotated[List[BaseMessage], add_messages]
+    status: str
+# --- 3. NODES / AGENT LOGIC ---
+
+
+# 1). INITIALIZE GUARDRAILS ---
+config = RailsConfig.from_path("./config")
+rails = LLMRails(config, llm=llm)  # Pass existing LLM
+
+
+# 1.5) SEARCH THE WEB (tool) ---
+
+# search_tool = TavilySearchResults(k=3)
+
+search_tool = TavilySearch(max_results=3, search_depth="basic")
+
+
+@tool
+async def web_search(query: str):
+    """
+    Search the web for real-time information or topics not found in the internal Docs.
+    Use this only when the user asks about current events or specific external data, or something you really don't know
+    """
+    results = await search_tool.ainvoke(query)
+
+     # case 1: structured dict
+    if isinstance(results, dict):
+        text = ""
+        if results.get("answer"):
+            text += str(results["answer"]) + "\n\n"
+
+        if "results" in results:
+            text += "\n".join(
+                r.get("content", "") for r in results["results"]
+                if isinstance(r, dict)
+            )
+
+    # case 2: list of results
+    elif isinstance(results, list):
+        text = "\n".join(
+            r.get("content", str(r)) if isinstance(r, dict) else str(r)
+            for r in results
+        )
+
+    # case 3: plain string
+    else:
+        text = str(results)
+
+    return f"--------- WEB SEARCH RESULTS ---------\n\n{text}"
+
+
+# 2). RETRIEVE TOOL ---
+
+
+@tool
+async def retrieve_docs(query: str):
+    """Fetch relevant internal documents to answer user queries about the company, guidelines, or products."""
+    docs = await retriever.ainvoke(query) if retriever else []
+    joined_results = "\n".join(doc.page_content for doc in docs)
+    return f"--- INTERNAL DOCS KNOWLEDGE ---\n{joined_results}\n\n"
+
+
+#  3). CALL MODEL NODE WITH GUARDRAILS & PROMPT TEMPLATE ---
+async def call_model_node(state: AgentState):
+
+    # A. define the prompt template
+    prompt_template = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "You are an AI assistant. Use the retrieve_docs tool to search for internal knowledge and the web_search tool for external information. "
+                "CRITICAL INSTRUCTIONS:\n"
+                "1. DO NOT use tools for simple greetings (e.g. 'hi', 'hey', 'hello') or casual conversation. Answer these directly.\n"
+                "2. If you have already used a tool and got a result, synthesize the final answer immediately. DO NOT call the tool again for the same question.\n"
+                "3. Always provide concise and helpful answers.",
+            ),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
+
+    # Bind template with tools
+
+    chain = prompt_template | llm_with_tools
+
+
+    # B. Generate response with Guardrails
+    res = await chain.ainvoke({"messages": state["messages"]})
+
+    status = "Finalizing Response..."
+
+    # C. Run Guardrails on the output text ONLY if it's not a tool call
+    if res.tool_calls:
+        status = "Calling Tools..."
+    else:
+        status = "Answering..."
+
+        if res.content.strip():
+
+            # nemo_input = [
+            #                 {
+            #                     "role": "user", 
+            #                     "content": f"Context: {context}\n\nQuestion: {state['messages'][-1].content}"
+            #                 },
+            #                 {
+            #                     "role": "assistant",
+            #                     "content": res.content
+            #                 }
+            #             ]
+
+
+            # --- Guardrails output check only ---
+            check_messages = [{"role": "assistant", "content": res.content}]
+            rails_result = await rails.generate_async(
+               messages=check_messages,
+            options={
+                "output_vars": True,
+                "rails": ["output"] 
+            }
+            )
+            new_content = res.content
+            if hasattr(rails_result, "content"):
+                new_content = rails_result.content
+            elif hasattr(rails_result, "response") and isinstance(rails_result.response, list) and len(rails_result.response) > 0:
+                first_response = rails_result.response[0]
+                if isinstance(first_response, dict):
+                    new_content = first_response.get("content", res.content)
+                else:
+                    new_content = res.content
+                
+            #----------------------DEBUG---------------------------------------
+            print(f"DEBUG: Original AI Content: {res.content}")
+            print(f"DEBUG: Guardrails Result: {new_content}")
+            #------------------------------------------------------------------
+
+            # If NeMo returned an actual modified response (like a refusal), we update the content.
+            # We remove the strict equality block because Llama 3 sometimes hallucinates during the safety check.
+            if new_content and str(new_content).strip() != "":
+                # Only override if NeMo specifically triggered a refusal flow
+                if "sorry" in str(new_content).lower() or "cannot answer" in str(new_content).lower():
+                    # DO NOT mutate res.content so we don't poison the LLM's memory!
+                    # Just update the status flag, and we'll intercept it in the frontend stream.
+                    status = "Response blocked by safety/fact-check guardrails."
+    return {"messages": [res], "status": status}
+
+tools = [web_search, retrieve_docs]
+tool_node = ToolNode(tools)
+llm_with_tools = llm.bind_tools(tools)
+# --- 4. GRAPH ORCHESTRATION ---
+
+workflow = StateGraph(AgentState)
+
+workflow.add_node("llm", call_model_node)
+workflow.add_node("tools", tool_node)
+
+
+workflow.add_edge(START, "llm")
+workflow.add_conditional_edges(
+    "llm",
+    tools_condition,  # Checks if the LLM called a tool
+)
+workflow.add_edge("tools", "llm")
+# --- 5. MEMORY (PostgreSQL Persistence) ---
+
+DB_USER = os.environ.get("PGSQL_USERNAME")
+DB_PASSWORD = os.environ.get("PGSQL_PASSWORD")
+DB_HOST = os.environ.get("PGSQL_HOST", "localhost")
+DB_PORT = os.environ.get("PGSQL_PORT", "5432")
+DB_NAME = os.environ.get("PGSQL_NAME")
+
+DB_URI = (
+    f"postgresql://{DB_USER}:{DB_PASSWORD}"
+    f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    f"?sslmode=require&channel_binding=require"
+)
+
+pool = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global retriever
+    global graph_app
+    global pool  # added
+    # Initialize checkpointer and setup tables
+
+    # create pool here  ← changed
+    pool = AsyncConnectionPool(
+        conninfo=DB_URI,
+        max_size=10,
+        min_size=1,  # keeps one active connection
+        timeout=10,
+        kwargs={"autocommit": True},
+    )
+    async with pool:
+        vector_db = get_vector_db()
+        retriever = vector_db.as_retriever(search_kwargs={"k": 3})
+        checkpointer = AsyncPostgresSaver(pool)
+        await checkpointer.setup()
+        # Compile graph with the async checkpointer
+        graph_app = workflow.compile(checkpointer=checkpointer)
+        yield
+# --- 6. API / FRONTEND CONNECTION (FastAPI) ---
+
+api = FastAPI(lifespan=lifespan)
+
+
+# --- PIP FREEZE ---
+@api.get("/__freeze")
+def freeze():
+    import pkg_resources
+    return sorted([str(d) for d in pkg_resources.working_set])
+# -----------------
+
+
+api.add_middleware(
+    CORSMiddleware,
+    # allow_origins=[os.environ.get("frontendURL", "http://localhost:5173")],
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@api.post("/chat")
+async def chat_endpoint(user_id: str, thread_id: str, message: str):
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 7}
+    input_data = {"messages": [HumanMessage(content=message)]}
+
+    async def event_generator():
+        yield "data: [STATUS] Answering...\n\n"  # endpoint should immediately send a ping to show it's alive
+        try:
+            async for event in graph_app.astream(
+                input_data, config=config, stream_mode="updates"
+            ):
+                # 1. Handle Status Updates (from any node that provides them)
+                # The 'event' dict will look like: {"retrieve": {"status": "...", "context": "..."}}
+            
+                for node_name, node_output in event.items():
+                    if isinstance(node_output, dict) and node_output.get("status"):
+                        yield f"data: [STATUS] {node_output['status']}\n\n"
+
+                    # 2. Handle the Final AI Message (specifically from the llm node)
+                    if node_name == "llm" and isinstance(node_output, dict) and "messages" in node_output:
+                        # node_output["messages"] only contains the NEW messages from this node
+                        last_message = node_output["messages"][-1]
+
+                        if node_output.get("status") == "Response blocked by safety/fact-check guardrails.":
+                            yield "data: Response blocked by safety/fact-check guardrails.\n\n"
+                        elif not getattr(last_message, "tool_calls", None) and last_message.content.strip():
+                            yield f"data: {last_message.content}\n\n"
+        except Exception as e:
+            import traceback
+            tb_str = traceback.format_exc().replace('\n', ' | ')
+            yield f"data: [ERROR] {str(e)} --- TRACEBACK: {tb_str}\n\n"
+        yield "data: [DONE]\n\n"  # termination event
+
+
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

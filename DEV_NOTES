@@ -1,0 +1,7 @@
+Convert RAG ingestion -> Document upload feature
+
+Users control their own alloted space on DB
+
+They can upload files and chat about them, then delete them from the DB right from the frontend ( To upload bigger files)
+
+Challenge: Separate uploaded files according to user account

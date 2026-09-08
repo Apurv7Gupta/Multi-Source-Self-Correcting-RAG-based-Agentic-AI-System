@@ -26,6 +26,7 @@ llm_tool_error = HuggingFaceEndpoint(
     repo_id="meta-llama/Llama-3.1-8B-Instruct",
     huggingfacehub_api_token=os.getenv("HF_TOKEN"),
     temperature=0.1,
+    do_sample=True,
     max_new_tokens=512,
     streaming=True,
 )
@@ -39,6 +40,7 @@ pool = None
 class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     status: str
+    temperature: float
 # --- 3. NODES / AGENT LOGIC ---
 
 
@@ -101,6 +103,22 @@ async def retrieve_docs(query: str):
 
 #  3). CALL MODEL NODE WITH GUARDRAILS & PROMPT TEMPLATE ---
 async def call_model_node(state: AgentState):
+    temp = state.get("temperature", 0.1)
+    if temp <= 0:
+        temp = 0.01
+
+    print(f"--- DEBUG: LLM Temperature set to {temp} ---")
+
+    llm_tool_dynamic = HuggingFaceEndpoint(
+        repo_id="meta-llama/Llama-3.1-8B-Instruct",
+        huggingfacehub_api_token=os.getenv("HF_TOKEN"),
+        temperature=temp,
+        do_sample=True,
+        max_new_tokens=512,
+        streaming=True,
+    )
+    llm_dynamic = ChatHuggingFace(llm=llm_tool_dynamic)
+    llm_with_tools_dynamic = llm_dynamic.bind_tools(tools)
 
     # A. define the prompt template
     prompt_template = ChatPromptTemplate.from_messages(
@@ -119,7 +137,7 @@ async def call_model_node(state: AgentState):
 
     # Bind template with tools
 
-    chain = prompt_template | llm_with_tools
+    chain = prompt_template | llm_with_tools_dynamic
 
 
     # B. Generate response with Guardrails
@@ -262,9 +280,9 @@ api.add_middleware(
 
 
 @api.post("/chat")
-async def chat_endpoint(user_id: str, thread_id: str, message: str):
+async def chat_endpoint(user_id: str, thread_id: str, message: str, temperature: float = 0.1):
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 7}
-    input_data = {"messages": [HumanMessage(content=message)]}
+    input_data = {"messages": [HumanMessage(content=message)], "temperature": temperature}
 
     async def event_generator():
         yield "data: [STATUS] Answering...\n\n"  # endpoint should immediately send a ping to show it's alive
@@ -287,7 +305,9 @@ async def chat_endpoint(user_id: str, thread_id: str, message: str):
                         if node_output.get("status") == "Response blocked by safety/fact-check guardrails.":
                             yield "data: Response blocked by safety/fact-check guardrails.\n\n"
                         elif not getattr(last_message, "tool_calls", None) and last_message.content.strip():
-                            yield f"data: {last_message.content}\n\n"
+                            import json
+                            payload = json.dumps(last_message.content)
+                            yield f"data: {payload}\n\n"
         except Exception as e:
             import traceback
             tb_str = traceback.format_exc().replace('\n', ' | ')

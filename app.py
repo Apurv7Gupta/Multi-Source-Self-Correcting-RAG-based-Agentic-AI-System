@@ -42,6 +42,13 @@ class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     status: str
     temperature: float
+    max_new_tokens: int
+    top_p: float
+    top_k: int
+    repetition_penalty: float
+    system_prompt: str
+    web_search_enabled: bool
+    rag_enabled: bool
 # --- 3. NODES / AGENT LOGIC ---
 
 
@@ -108,6 +115,14 @@ async def call_model_node(state: AgentState):
     if temp <= 0:
         temp = 0.01
 
+    max_tokens = state.get("max_new_tokens", 512)
+    top_p = state.get("top_p", 0.9)
+    top_k = state.get("top_k", 50)
+    rep_penalty = state.get("repetition_penalty", 1.0)
+    sys_prompt = state.get("system_prompt", "")
+    use_web = state.get("web_search_enabled", True)
+    use_rag = state.get("rag_enabled", True)
+
     print(f"--- DEBUG: LLM Temperature set to {temp} ---")
 
     llm_tool_dynamic = HuggingFaceEndpoint(
@@ -115,25 +130,46 @@ async def call_model_node(state: AgentState):
         huggingfacehub_api_token=os.getenv("HF_TOKEN"),
         temperature=temp,
         do_sample=True,
-        max_new_tokens=512,
+        max_new_tokens=max_tokens,
+        top_p=top_p,
+        top_k=top_k,
+        repetition_penalty=rep_penalty,
         streaming=True,
     )
     llm_dynamic = ChatHuggingFace(llm=llm_tool_dynamic)
-    llm_with_tools_dynamic = llm_dynamic.bind_tools(tools)
+    
+    active_tools = []
+    if use_web:
+        active_tools.append(web_search)
+    if use_rag:
+        active_tools.append(retrieve_docs)
+
+    if active_tools:
+        llm_with_tools_dynamic = llm_dynamic.bind_tools(active_tools)
+    else:
+        llm_with_tools_dynamic = llm_dynamic
 
     # A. define the prompt template
+    default_system = (
+        "You are an AI assistant. You have access to tools, but you must NOT use them unless absolutely necessary.\n"
+        "CRITICAL INSTRUCTIONS:\n"
+        "1. DO NOT use tools for creative writing (e.g., poems, stories, code), simple greetings, or general conversation. Answer these directly from your own knowledge.\n"
+        "2. ONLY use retrieve_docs for specific questions about the company's internal knowledge and data.\n"
+        "3. ONLY use web_search for specific questions about current events or external facts.\n"
+        "4. If you have already used a tool and got a result, synthesize the final answer immediately. DO NOT call the tool again for the same question.\n"
+        "5. Always provide concise and helpful answers."
+    )
+    
+    if sys_prompt.strip():
+        final_system = f"{default_system}\n\nUSER CUSTOM INSTRUCTIONS & PERSONA:\n{sys_prompt.strip()}"
+    else:
+        final_system = default_system
+
+    print(f"--- DEBUG: System Prompt: {final_system} ---")
+
     prompt_template = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                "You are an AI assistant. You have access to tools, but you must NOT use them unless absolutely necessary.\n"
-                "CRITICAL INSTRUCTIONS:\n"
-                "1. DO NOT use tools for creative writing (e.g., poems, stories, code), simple greetings, or general conversation. Answer these directly from your own knowledge.\n"
-                "2. ONLY use retrieve_docs for specific questions about the company's internal knowledge and data.\n"
-                "3. ONLY use web_search for specific questions about current events or external facts.\n"
-                "4. If you have already used a tool and got a result, synthesize the final answer immediately. DO NOT call the tool again for the same question.\n"
-                "5. Always provide concise and helpful answers.",
-            ),
+            ("system", final_system),
             MessagesPlaceholder(variable_name="messages"),
         ]
     )
@@ -359,9 +395,31 @@ api.add_middleware(
 
 
 @api.post("/chat")
-async def chat_endpoint(user_id: str, thread_id: str, message: str, temperature: float = 0.1):
+async def chat_endpoint(
+    user_id: str, 
+    thread_id: str, 
+    message: str, 
+    temperature: float = 0.1,
+    max_new_tokens: int = 512,
+    top_p: float = 0.9,
+    top_k: int = 50,
+    repetition_penalty: float = 1.0,
+    system_prompt: str = "",
+    web_search_enabled: bool = True,
+    rag_enabled: bool = True
+):
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 7}
-    input_data = {"messages": [HumanMessage(content=message)], "temperature": temperature}
+    input_data = {
+        "messages": [HumanMessage(content=message)],
+        "temperature": temperature,
+        "max_new_tokens": max_new_tokens,
+        "top_p": top_p,
+        "top_k": top_k,
+        "repetition_penalty": repetition_penalty,
+        "system_prompt": system_prompt,
+        "web_search_enabled": web_search_enabled,
+        "rag_enabled": rag_enabled
+    }
 
     async def event_generator():
         yield "data: [STATUS] Answering...\n\n"  # endpoint should immediately send a ping to show it's alive

@@ -268,6 +268,54 @@ def freeze():
     return sorted([str(d) for d in pkg_resources.working_set])
 # -----------------
 
+@api.get("/threads")
+async def get_threads():
+    if not pool:
+        return {"threads": []}
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT DISTINCT thread_id FROM checkpoints;")
+            rows = await cur.fetchall()
+            return {"threads": [{"id": row[0], "title": f"Chat {row[0]}"} for row in rows]}
+
+@api.delete("/threads/{thread_id}")
+async def delete_thread(thread_id: str):
+    if not pool:
+        return {"status": "error", "message": "No database connection"}
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("DELETE FROM checkpoints WHERE thread_id = %s", (thread_id,))
+            await cur.execute("DELETE FROM checkpoint_writes WHERE thread_id = %s", (thread_id,))
+            try:
+                await cur.execute("DELETE FROM checkpoint_blobs WHERE thread_id = %s", (thread_id,))
+            except Exception:
+                pass
+    return {"status": "success"}
+
+@api.get("/chat/{thread_id}/history")
+async def get_chat_history(thread_id: str):
+    config = {"configurable": {"thread_id": thread_id}}
+    state = await graph_app.aget_state(config)
+    messages = state.values.get("messages", [])
+    history = []
+    for msg in messages:
+        if isinstance(msg, HumanMessage):
+            history.append({
+                "id": str(id(msg)),
+                "sender": "User",
+                "type": "text",
+                "content": msg.content
+            })
+        elif isinstance(msg, AIMessage):
+            if not getattr(msg, "tool_calls", None) and msg.content.strip():
+                history.append({
+                    "id": str(id(msg)),
+                    "sender": "Meridian",
+                    "type": "text",
+                    "content": msg.content
+                })
+    return {"history": history}
+
 
 api.add_middleware(
     CORSMiddleware,

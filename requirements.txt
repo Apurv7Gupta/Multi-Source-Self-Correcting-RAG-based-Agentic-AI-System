@@ -21,3 +21,4 @@ pinecone-client>=6.0.0
 langchain-pinecone>=0.2.13
 psycopg[binary,pool]==3.2.1
 langgraph-checkpoint-postgres>=3.0.4
+beautifulsoup4>=4.12.3

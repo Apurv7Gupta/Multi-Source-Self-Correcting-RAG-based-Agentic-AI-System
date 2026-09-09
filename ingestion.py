@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 import os
+if "USER_AGENT" not in os.environ:
+    os.environ["USER_AGENT"] = "MeridianBot/1.0"
 from typing import List
 from langchain_community.document_loaders import (
     TextLoader,

@@ -20,6 +20,7 @@ from pydantic import BaseModel
 import asyncio
 from db_config import get_vector_db
 from fastapi.middleware.cors import CORSMiddleware
+from langgraph.checkpoint.memory import MemorySaver
 
 
 # --- 1. LLM CONFIGURATION ---
@@ -36,6 +37,7 @@ llm = ChatHuggingFace(llm=llm_tool_error)
 # Global variables for the lifespan
 retriever = None
 graph_app = None 
+graph_app_temp = None
 pool = None
 # --- 2. STATE DEFINITION ---
 class AgentState(TypedDict):
@@ -276,6 +278,7 @@ pool = None
 async def lifespan(app: FastAPI):
     global retriever
     global graph_app
+    global graph_app_temp
     global pool  # added
     # Initialize checkpointer and setup tables
 
@@ -304,6 +307,8 @@ async def lifespan(app: FastAPI):
         await checkpointer.setup()
         # Compile graph with the async checkpointer
         graph_app = workflow.compile(checkpointer=checkpointer)
+        memory_saver = MemorySaver()
+        graph_app_temp = workflow.compile(checkpointer=memory_saver)
         yield
 # --- 6. API / FRONTEND CONNECTION (FastAPI) ---
 
@@ -466,7 +471,8 @@ async def chat_endpoint(
     repetition_penalty: float = 1.0,
     system_prompt: str = "",
     web_search_enabled: bool = True,
-    rag_enabled: bool = True
+    rag_enabled: bool = True,
+    is_temporary: bool = False
 ):
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 7}
     input_data = {
@@ -484,7 +490,8 @@ async def chat_endpoint(
     async def event_generator():
         yield "data: [STATUS] Answering...\n\n"  # endpoint should immediately send a ping to show it's alive
         try:
-            async for event in graph_app.astream(
+            active_app = graph_app_temp if is_temporary else graph_app
+            async for event in active_app.astream(
                 input_data, config=config, stream_mode="updates"
             ):
                 # 1. Handle Status Updates (from any node that provides them)

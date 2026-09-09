@@ -103,10 +103,10 @@ async def web_search(query: str):
 
 @tool
 async def retrieve_docs(query: str):
-    """Fetch relevant internal documents to answer user queries about the company, guidelines, or products."""
+    """Fetch relevant information from the ingested knowledge base to answer user queries. Use this when the user asks about specific facts, people, or topics that you do not know."""
     docs = await retriever.ainvoke(query) if retriever else []
     joined_results = "\n".join(doc.page_content for doc in docs)
-    return f"--- INTERNAL DOCS KNOWLEDGE ---\n{joined_results}\n\n"
+    return f"--- KNOWLEDGE BASE ---\n{joined_results}\n\n"
 
 
 #  3). CALL MODEL NODE WITH GUARDRAILS & PROMPT TEMPLATE ---
@@ -154,8 +154,8 @@ async def call_model_node(state: AgentState):
         "You are an AI assistant. You have access to tools, but you must NOT use them unless absolutely necessary.\n"
         "CRITICAL INSTRUCTIONS:\n"
         "1. DO NOT use tools for creative writing (e.g., poems, stories, code), simple greetings, or general conversation. Answer these directly from your own knowledge.\n"
-        "2. ONLY use retrieve_docs for specific questions about the company's internal knowledge and data.\n"
-        "3. ONLY use web_search for specific questions about current events or external facts.\n"
+        "2. Use retrieve_docs to query the knowledge base when asked about specific facts, people, or topics you do not know.\n"
+        "3. ONLY use web_search for specific questions about current events or external facts if retrieve_docs fails.\n"
         "4. If you have already used a tool and got a result, synthesize the final answer immediately. DO NOT call the tool again for the same question.\n"
         "5. Always provide concise and helpful answers."
     )
@@ -288,11 +288,14 @@ async def lifespan(app: FastAPI):
         kwargs={"autocommit": True},
     )
     async with pool:
-        # Create thread_titles table if it doesn't exist
+        # Create tables if they don't exist
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
                     "CREATE TABLE IF NOT EXISTS thread_titles (thread_id TEXT PRIMARY KEY, title TEXT)"
+                )
+                await cur.execute(
+                    "CREATE TABLE IF NOT EXISTS ingested_documents (id SERIAL PRIMARY KEY, source TEXT UNIQUE, type TEXT)"
                 )
         
         vector_db = get_vector_db()
@@ -321,11 +324,55 @@ class IngestRequest(BaseModel):
     url: str
 
 @api.post("/ingest")
-def ingest_endpoint(request: IngestRequest):
+async def ingest_endpoint(request: IngestRequest):
     try:
         from ingestion import ingest_web_url
-        result = ingest_web_url(request.url)
+        import asyncio
+        result = await asyncio.to_thread(ingest_web_url, request.url)
+        if pool:
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("INSERT INTO ingested_documents (source, type) VALUES (%s, %s) ON CONFLICT DO NOTHING", (request.url, 'url'))
         return {"status": "success", "message": result}
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api.get("/knowledge")
+async def get_knowledge():
+    if not pool:
+        return {"documents": []}
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT id, source, type FROM ingested_documents ORDER BY id DESC")
+            rows = await cur.fetchall()
+            return {"documents": [{"id": row[0], "source": row[1], "type": row[2]} for row in rows]}
+
+@api.delete("/knowledge/{id}")
+async def delete_knowledge(id: int):
+    if not pool:
+        return {"status": "error", "message": "No database connection"}
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT source FROM ingested_documents WHERE id = %s", (id,))
+                row = await cur.fetchone()
+                if not row:
+                    return {"status": "error", "message": "Document not found"}
+                source = row[0]
+                
+                # Delete from Pinecone
+                from db_config import pc, INDEX_NAME
+                import asyncio
+                def delete_from_pinecone(src):
+                    idx = pc.Index(INDEX_NAME)
+                    idx.delete(filter={"source": src})
+                
+                await asyncio.to_thread(delete_from_pinecone, source)
+                
+                # Delete from postgres
+                await cur.execute("DELETE FROM ingested_documents WHERE id = %s", (id,))
+        return {"status": "success"}
     except Exception as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=str(e))

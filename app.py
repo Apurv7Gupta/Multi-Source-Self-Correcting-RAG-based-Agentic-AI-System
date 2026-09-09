@@ -317,6 +317,19 @@ def freeze():
 class RenameThreadRequest(BaseModel):
     title: str
 
+class IngestRequest(BaseModel):
+    url: str
+
+@api.post("/ingest")
+def ingest_endpoint(request: IngestRequest):
+    try:
+        from ingestion import ingest_web_url
+        result = ingest_web_url(request.url)
+        return {"status": "success", "message": result}
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api.get("/threads")
 async def get_threads():
     if not pool:
